@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Lite Drive{% endblock %}
+{% block body %}
+<header class="topbar">
+  <strong>Lite Drive</strong>
+  <span class="spacer"></span>
+  <span id="whoami" class="muted"></span>
+  <button id="logout" type="button" class="ghost">Sign out</button>
+</header>
+
+<!-- HTMX drives the list request (trigger on load + on "refresh"); app.js renders the JSON it returns. -->
+<div id="loader" hx-get="/files" hx-trigger="load, refresh from:body" hx-swap="none" hx-indicator="#busy"></div>
+
+<section class="toolbar" aria-label="Actions">
+  <button id="btn-upload" type="button">Upload…</button>
+  <input id="file-input" type="file" multiple hidden>
+  <button id="btn-download" type="button">Download</button>
+  <button id="btn-delete" type="button" class="danger">Delete</button>
+  <button id="btn-refresh" type="button" class="ghost">Refresh</button>
+  <span class="sep"></span>
+  <span class="group" role="group" aria-label="Sort by name">
+    <button id="sort-asc" type="button" aria-pressed="true">Name A→Z</button>
+    <button id="sort-desc" type="button" aria-pressed="false">Name Z→A</button>
+  </span>
+  <label class="inline">Show
+    <select id="filter">
+      <option value="all">All files</option>
+      <option value="cpp_png">Only .cpp and .png</option>
+    </select>
+  </label>
+  <details id="columns-menu" class="menu">
+    <summary>Columns</summary>
+    <div class="menu-body" id="columns-list"></div>
+  </details>
+  <span id="busy" class="htmx-indicator muted">Loading…</span>
+</section>
+
+<p class="note">Folder sync is desktop-only: a browser cannot read a local folder.</p>
+
+<main class="layout">
+  <section id="dropzone" class="table-wrap" aria-label="Files">
+    <table id="files-table">
+      <thead><tr id="head-row"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p id="empty" class="muted center" hidden>No files to show.</p>
+    <div class="drop-hint" id="drop-hint">Drop files here to upload</div>
+  </section>
+  <aside id="preview" class="preview" aria-label="Preview">
+    <p id="preview-message" class="muted center">Select a file to preview</p>
+    <pre id="preview-text" hidden></pre>
+    <img id="preview-image" alt="" hidden>
+  </aside>
+</main>
+
+<footer class="statusbar"><span id="status" role="status"></span></footer>
+
+<dialog id="confirm-dialog">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <menu>
+      <button value="cancel" id="confirm-cancel" class="ghost">Cancel</button>
+      <button value="ok" id="confirm-ok" class="danger">Delete</button>
+    </menu>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}
