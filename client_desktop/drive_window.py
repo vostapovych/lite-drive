@@ -1,9 +1,12 @@
 """DriveWindow: toolbar + table | preview + status bar. Wires controllers; contains no network code."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtWidgets import (QComboBox, QLabel, QMainWindow, QMenu, QSplitter, QToolBar, QToolButton)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QLabel, QMainWindow, QMenu, QSplitter, QToolBar,
+                               QToolButton)
 
 from client_desktop.api_client import ApiClient
 from client_desktop.file_list_controller import FileListController
@@ -11,6 +14,8 @@ from client_desktop.file_table_view import FileTableView
 from client_desktop.models import COLUMNS, FileItem, FileTableModel, FilterMode, ItemRole, NameTypeProxyModel
 from client_desktop.preview import PreviewKind
 from client_desktop.preview_pane import PreviewPane
+from client_desktop.sync_controller import SyncController
+from client_desktop.transfers import TransferController, TransferQueue
 from client_desktop.view_settings import ViewSettings
 
 
@@ -30,6 +35,13 @@ class DriveWindow(QMainWindow):
         self.preview = PreviewPane()
         self.files = FileListController(api, self.model, self)
         self.files.dialog_parent = self
+        self.queue = TransferQueue(self)
+        self.transfers = TransferController(api, self.queue, self)
+        self.sync = SyncController(api, self.queue, parent=self)
+        self._settings = settings
+        # injectable pickers so tests / screenshot scripts can drive the flows without native dialogs
+        self.choose_files = lambda: QFileDialog.getOpenFileNames(self, "Upload files")[0]
+        self.choose_dir = lambda title: QFileDialog.getExistingDirectory(self, title)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.addWidget(self.table)
@@ -59,6 +71,19 @@ class DriveWindow(QMainWindow):
         self.files.failed.connect(lambda msg: self._info(f"Error: {msg}"))
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._sync_sort_actions)
 
+        # transfers: drag in, drag out, buttons
+        self.table.filesDropped.connect(self.upload_paths)
+        self.table.drag_paths = self._paths_for_drag
+        self.transfers.batchFinished.connect(self._on_batch_finished)
+        self.queue.taskFailed.connect(lambda label, err: self._info(f"Failed {label}: {err}"))
+        # sync
+        self.sync.bound.connect(lambda f: (self.lbl_folder.setText(f"Folder: {f}"), self._info("Folder bound")))
+        self.sync.synchronised.connect(self._on_synchronised)
+        self.sync.failed.connect(lambda msg: self._info(f"Sync error: {msg}"))
+        saved = str(settings.value("sync/folder", "") or "")
+        if saved and Path(saved).is_dir():
+            self.sync.bind(saved)
+
     # ---- toolbar ----
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
@@ -66,6 +91,8 @@ class DriveWindow(QMainWindow):
         self.addToolBar(tb)
         self.toolbar = tb
         self.act_refresh = tb.addAction("Refresh", self.refresh)
+        self.act_upload = tb.addAction("Upload…", self.upload_dialog)
+        self.act_download = tb.addAction("Download…", self.download_selected)
         self.act_delete = tb.addAction("Delete", self.delete_selected)
         tb.addSeparator()
 
@@ -95,6 +122,17 @@ class DriveWindow(QMainWindow):
         btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         btn.setMenu(self.columns_menu)
         tb.addWidget(btn)
+        tb.addSeparator()
+
+        self.act_bind = tb.addAction("Bind folder…", self.bind_dialog)
+        self.act_sync = tb.addAction("Sync now", self.sync.synchronise)
+        self.act_auto = QAction("Auto-sync", self, checkable=True)
+        self.act_auto.setChecked(True)
+        self.act_auto.toggled.connect(lambda on: setattr(self.sync, "auto_sync", on))
+        tb.addAction(self.act_auto)
+        self.lbl_folder = QLabel("  No folder bound")
+        self.lbl_folder.setObjectName("folderLabel")
+        tb.addWidget(self.lbl_folder)
 
     def _rebuild_columns_menu(self) -> None:
         self.columns_menu.clear()
@@ -132,6 +170,58 @@ class DriveWindow(QMainWindow):
 
     def delete_selected(self) -> None:
         self.files.delete(self.selected_items())
+
+    # ---- transfers / sync ----
+    def upload_dialog(self) -> None:
+        paths = self.choose_files()
+        if paths:
+            self.upload_paths(paths)
+
+    def upload_paths(self, paths: list[str]) -> None:
+        n = self.transfers.upload(paths)
+        self._info(f"Uploading {n} file(s)…" if n else "Nothing to upload (folders are not supported)")
+
+    def download_selected(self) -> None:
+        items = self.selected_items()
+        if not items:
+            self._info("Select file(s) to download")
+            return
+        dest = self.choose_dir("Download to…")
+        if dest:
+            self._info(f"Downloading {self.transfers.download(items, dest)} file(s)…")
+
+    def _paths_for_drag(self, ids: list[str]) -> list[str]:
+        names = {i.id: i.name for i in self.model.items()}
+        try:
+            return self.transfers.prepare_for_drag(ids, names)
+        except Exception as exc:  # noqa: BLE001
+            self._info(f"Drag failed: {getattr(exc, 'message', exc)}")
+            return []
+
+    def _on_batch_finished(self, kind: str, ok: int, errors: list) -> None:
+        self._info(f"{kind.capitalize()} finished: {ok} ok" + (f", {len(errors)} failed" if errors else ""))
+        if kind == "upload":
+            self.refresh()
+
+    def bind_dialog(self) -> None:
+        folder = self.choose_dir("Folder to keep in sync")
+        if folder:
+            self._settings.setValue("sync/folder", folder)
+            self.sync.bind(folder)
+            self.sync.synchronise()
+
+    def _on_synchronised(self, r: dict) -> None:
+        msg = f"Sync: {r['uploaded']} uploaded, {r['downloaded']} downloaded, {r['skipped']} unchanged"
+        if r["errors"]:
+            msg += f", {len(r['errors'])} failed"
+        self._info(msg)
+        self.sync_summary = r
+        self.refresh()
+
+    def closeEvent(self, event) -> None:
+        self.sync.watcher.stop()
+        self.transfers.cleanup_drag()
+        super().closeEvent(event)
 
     def _on_current(self, cur) -> None:
         if not cur.isValid():

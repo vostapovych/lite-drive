@@ -10,3 +10,11 @@
 - **Sort/filter** are free with QSortFilterProxyModel (`lessThan`, `filterAcceptsRow`) — the model/view split makes "client-side" natural; the source model is never reordered.
 - **Preview** needs the bytes: signed URL -> `fetch` -> QPlainTextEdit / QPixmap. Stale results (user clicked another file) must be discarded by name check.
 - **Relative signed URLs** (FakeSupabase dev mount) have to be joined with the base URL in ApiClient; real Supabase URLs are absolute.
+
+## Desktop — transfers, drag-and-drop, sync
+- **Local filesystem is the whole point of sync**: scanning a folder, reading/writing bytes, and `os.utime` to set a downloaded file's mtime to the server's value are things only the desktop client can do. A browser has no folder access, so Stage 3 has no sync (File System Access API is Chromium-only and needs a user gesture per session; out of scope).
+- **Transfers**: reserve -> PUT signed URL -> commit on a QThreadPool (3 workers); the GUI thread only sees queued signals. The browser can do the same PUT with `fetch`, but cannot read a path — it only gets File objects the user picked/dropped.
+- **Drag-in** is a few lines (`dropEvent` + local URLs). **Drag-out** is the awkward direction: QDrag needs real files *before* the drag starts, so rows are downloaded synchronously to a temp dir inside `startDrag` (blocking, fine for small files). A browser can only do this for a single file via the non-standard `DownloadURL` drag type (Chromium).
+- **Change detection**: watchdog runs on its own thread; events are marshalled to the GUI thread through a signal and debounced (700 ms) so a half-written file isn't uploaded. Downloads write files, which re-trigger the watcher -> converges because equal mtimes plan SKIP.
+- **Reusable across clients**: the REST API, server isolation, signed-URL flow, and the *rules* in SyncPlanner/preview mapping. Not reusable: all Qt code. The web client re-implements sort/filter/preview in JS.
+- **Testing**: Qt offscreen + a real uvicorn thread over the in-memory fake made the whole GUI testable without network; the one thing not testable headless is the OS-level QDrag.exec (we test the data it is given).

@@ -17,10 +17,17 @@ Run: 2026-11-23 overnight — days 1–3 straight through (user request). Day 4 
 - [x] Delete with confirmation
 
 ## Day 3 — transfers, drag-and-drop, sync
-- [ ] TransferTask/TransferQueue/TransferController upload + download
-- [ ] Drag files in -> upload; drag rows out -> download
-- [ ] SyncPlanner + FolderWatcher + SyncController
+- [x] TransferTask/TransferQueue/TransferController upload + download
+- [x] Drag files in -> upload; drag rows out -> download
+- [x] SyncPlanner + FolderWatcher + SyncController
 
 ## Log
 - Day 1 done: 19 tests green, committed (da79eb9). Demo users (FakeSupabase): alice@example.com / alice123, bob@example.com / bob123.
 - Day 2 done: desktop shell (login dialog, table, hideable columns, sort A-Z/Z-A, filter, preview, delete+confirm). Tests 1 & 2 green. Run: `LITEDRIVE_FAKE_SUPABASE=1 .venv/Scripts/python -m uvicorn server.app:app` then `.venv/Scripts/python -m client_desktop`.
+- Day 3 done: upload/download (signed URLs, 3-worker pool), drag files in -> upload, drag rows out -> temp-dir download + QDrag, folder bind + watchdog auto-sync + Sync now. 41 tests green.
+
+## What to check (manual, needs a display)
+1. `.venv/Scripts/python -m uvicorn server.app:app` with `LITEDRIVE_FAKE_SUPABASE=1` (PowerShell: `$env:LITEDRIVE_FAKE_SUPABASE=1`), then `.venv/Scripts/python -m client_desktop`; log in as alice@example.com / alice123.
+2. **Real drag-out to Explorer** is the only thing automated tests can't cover (QDrag.exec blocks headless) — try dragging a row onto the desktop.
+3. Real Supabase path (`HttpSupabase`) has never run against a live project: do docs/DEPLOY.md, then log in/upload/download once.
+4. Not started: Day 4 (web client, tools/make_screenshots.py, tools/make_web_screenshots.py), Stage 4 report text.
