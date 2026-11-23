@@ -11,12 +11,16 @@ from client_desktop.models import FileItem, FileTableModel
 from client_desktop.workers import run_async
 
 
-def ask_confirm(parent: QWidget | None, text: str) -> bool:
+def build_confirm_box(parent: QWidget | None, text: str) -> QMessageBox:
     box = QMessageBox(QMessageBox.Icon.Warning, "Delete file", text,
                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, parent)
     box.setDefaultButton(QMessageBox.StandardButton.Cancel)
     box.setObjectName("deleteConfirm")
-    return box.exec() == QMessageBox.StandardButton.Yes
+    return box
+
+
+def ask_confirm(parent: QWidget | None, text: str) -> bool:
+    return build_confirm_box(parent, text).exec() == QMessageBox.StandardButton.Yes
 
 
 class FileListController(QObject):

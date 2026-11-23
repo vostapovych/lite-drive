@@ -25,7 +25,7 @@ class DriveWindow(QMainWindow):
         self.api = api
         self.view_settings = ViewSettings(settings)
         self.setWindowTitle(f"Lite Drive — {user_email}" if user_email else "Lite Drive")
-        self.resize(1100, 640)
+        self.resize(1200, 640)
 
         self.model = FileTableModel()
         self.proxy = NameTypeProxyModel(self)
@@ -48,12 +48,15 @@ class DriveWindow(QMainWindow):
         split.addWidget(self.preview)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
+        split.setSizes([760, 440])
         self.setCentralWidget(split)
 
         self.status_label = QLabel("")
         self.statusBar().addWidget(self.status_label, 1)
         self._build_toolbar()
 
+        for col, width in enumerate((170, 125, 125, 100)):  # Name, Created, Modified, Uploaded by
+            self.table.setColumnWidth(col, width)
         self.table.horizontalHeader().setSortIndicatorShown(True)
         self.sort_name(Qt.SortOrder.AscendingOrder)
         for col in self.view_settings.hidden_columns():
@@ -66,8 +69,9 @@ class DriveWindow(QMainWindow):
         self.proxy.modelReset.connect(self._update_status)
         self.proxy.rowsInserted.connect(self._update_status)
         self.proxy.rowsRemoved.connect(self._update_status)
-        self.files.refreshed.connect(lambda n: self._info(f"Loaded {n} file(s)"))
-        self.files.deleted.connect(lambda names: self._info(f"Deleted {names}"))
+        self._pending_info = ""  # result message to show once the follow-up refresh completes
+        self.files.refreshed.connect(self._on_refreshed)
+        self.files.deleted.connect(lambda names: setattr(self, "_pending_info", f"Deleted {names}"))
         self.files.failed.connect(lambda msg: self._info(f"Error: {msg}"))
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._sync_sort_actions)
 
@@ -198,10 +202,17 @@ class DriveWindow(QMainWindow):
             self._info(f"Drag failed: {getattr(exc, 'message', exc)}")
             return []
 
+    def _on_refreshed(self, n: int) -> None:
+        msg, self._pending_info = self._pending_info, ""
+        self._info(msg or f"Loaded {n} file(s)")
+
     def _on_batch_finished(self, kind: str, ok: int, errors: list) -> None:
-        self._info(f"{kind.capitalize()} finished: {ok} ok" + (f", {len(errors)} failed" if errors else ""))
+        msg = f"{kind.capitalize()} finished: {ok} ok" + (f", {len(errors)} failed" if errors else "")
         if kind == "upload":
+            self._pending_info = msg
             self.refresh()
+        else:
+            self._info(msg)
 
     def bind_dialog(self) -> None:
         folder = self.choose_dir("Folder to keep in sync")
@@ -214,8 +225,8 @@ class DriveWindow(QMainWindow):
         msg = f"Sync: {r['uploaded']} uploaded, {r['downloaded']} downloaded, {r['skipped']} unchanged"
         if r["errors"]:
             msg += f", {len(r['errors'])} failed"
-        self._info(msg)
         self.sync_summary = r
+        self._pending_info = msg
         self.refresh()
 
     def closeEvent(self, event) -> None:

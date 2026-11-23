@@ -30,7 +30,8 @@ Push this repo to GitHub (`.env` is gitignored; never commit keys).
 | `SUPABASE_BUCKET` | `drive` |
 
 4. **Create Web Service**. When it is live open `https://<name>.onrender.com/healthz` -> `{"status":"ok"}`, and `/docs` for the API.
-5. Desktop client: enter `https://<name>.onrender.com` as the server URL in the login dialog.
+5. Web client: open `https://<name>.onrender.com/` (same service; this is the public URL for the Stage 3 bonus).
+6. Desktop client: enter `https://<name>.onrender.com` as the server URL in the login dialog.
 
 ## Notes for the report
 - Free services **sleep after 15 min idle**; the first request afterwards is a **cold start (~30-60 s)**. Hit `/healthz` before a demo.
